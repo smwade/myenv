@@ -5,12 +5,12 @@ DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="$HOME/.dotfiles-backup"
 ERRORS=0
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
@@ -18,106 +18,70 @@ warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; ERRORS=$((ERRORS + 1)); }
 
 # ============================================
-# 1. Detect OS
+# Homebrew
 # ============================================
-detect_os() {
+install_homebrew() {
+    if command -v brew &>/dev/null; then
+        success "Homebrew already installed"
+        return
+    fi
+
+    info "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+        error "Failed to install Homebrew"; return 1
+    }
+
+    # Add Homebrew to PATH for this session (Linux installs to /home/linuxbrew)
+    if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    elif [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+
+    success "Homebrew installed"
+}
+
+# ============================================
+# System packages (zsh, git, curl, build deps)
+# ============================================
+install_system_packages() {
+    info "Installing system packages..."
+
     case "$(uname -s)" in
-        Darwin) OS="macos" ;;
-        Linux)  OS="linux" ;;
-        *)      error "Unsupported OS: $(uname -s)"; exit 1 ;;
+        Darwin)
+            # macOS — everything via brew, system packages already present
+            ;;
+        Linux)
+            if command -v apt-get &>/dev/null; then
+                sudo apt-get update && sudo apt-get install -y zsh git curl build-essential || {
+                    error "Failed to install system packages"; return 1
+                }
+            elif command -v dnf &>/dev/null; then
+                sudo dnf install -y zsh git curl gcc make || {
+                    error "Failed to install system packages"; return 1
+                }
+            else
+                error "No supported package manager found (apt or dnf)"; return 1
+            fi
+            ;;
     esac
-    info "Detected OS: $OS"
 
-    if [ "$OS" = "linux" ]; then
-        if command -v apt-get &>/dev/null; then
-            PKG_MANAGER="apt"
-        elif command -v dnf &>/dev/null; then
-            PKG_MANAGER="dnf"
-        else
-            error "No supported package manager found (apt or dnf)"
-            exit 1
-        fi
-        info "Package manager: $PKG_MANAGER"
-    fi
+    success "System packages installed"
 }
 
 # ============================================
-# Helper: Install neovim from GitHub releases (Linux)
+# Brew packages (vim, neovim, tmux, autojump)
 # ============================================
-install_neovim_linux() {
-    local current_ver=""
-    if command -v nvim &>/dev/null; then
-        current_ver="$(nvim --version | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')"
-    fi
-
-    local required_ver="0.11.2"
-
-    # Check if current version is sufficient
-    if [ -n "$current_ver" ]; then
-        if printf '%s\n%s\n' "$required_ver" "$current_ver" | sort -V | head -1 | grep -qx "$required_ver"; then
-            success "Neovim $current_ver already meets minimum ($required_ver)"
-            return
-        fi
-        info "Neovim $current_ver is too old (need >= $required_ver), upgrading..."
-    else
-        info "Installing Neovim from GitHub releases..."
-    fi
-
-    local arch
-    arch="$(uname -m)"
-    local nvim_tar="nvim-linux-${arch}.tar.gz"
-    local nvim_url="https://github.com/neovim/neovim/releases/latest/download/${nvim_tar}"
-
-    curl -fsSL "$nvim_url" -o "/tmp/${nvim_tar}" || {
-        error "Failed to download Neovim"; return 1
+install_brew_packages() {
+    info "Installing brew packages (vim, neovim, tmux, autojump)..."
+    brew install vim neovim tmux autojump || {
+        error "Failed to install brew packages"; return 1
     }
-
-    sudo rm -rf /opt/nvim
-    sudo tar -C /opt -xzf "/tmp/${nvim_tar}" || {
-        error "Failed to extract Neovim"; return 1
-    }
-    rm -f "/tmp/${nvim_tar}"
-
-    # Symlink to /usr/local/bin so it's on PATH
-    sudo ln -sf /opt/nvim-linux-${arch}/bin/nvim /usr/local/bin/nvim
-
-    success "Neovim $(nvim --version | head -1) installed to /opt"
+    success "Brew packages installed"
 }
 
 # ============================================
-# 2. Install packages
-# ============================================
-install_packages() {
-    info "Installing packages..."
-
-    if [ "$OS" = "macos" ]; then
-        if ! command -v brew &>/dev/null; then
-            info "Installing Homebrew..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
-                error "Failed to install Homebrew"; return 1
-            }
-        fi
-        brew install zsh tmux neovim autojump git curl || {
-            error "Failed to install some packages"; return 1
-        }
-    else
-        if [ "$PKG_MANAGER" = "apt" ]; then
-            sudo apt-get update && sudo apt-get install -y zsh tmux autojump git curl || {
-                error "Failed to install some packages"; return 1
-            }
-        elif [ "$PKG_MANAGER" = "dnf" ]; then
-            sudo dnf install -y zsh tmux autojump git curl || {
-                error "Failed to install some packages"; return 1
-            }
-        fi
-        install_neovim_linux
-    fi
-
-    success "Packages installed"
-}
-
-# ============================================
-# 3. Install oh-my-zsh
+# oh-my-zsh
 # ============================================
 install_ohmyzsh() {
     if [ -d "$HOME/.oh-my-zsh" ]; then
@@ -133,7 +97,7 @@ install_ohmyzsh() {
 }
 
 # ============================================
-# 4. Install zsh-autosuggestions plugin
+# zsh-autosuggestions plugin
 # ============================================
 install_zsh_autosuggestions() {
     local plugin_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
@@ -151,7 +115,7 @@ install_zsh_autosuggestions() {
 }
 
 # ============================================
-# 5. Install nvm
+# nvm
 # ============================================
 install_nvm() {
     if [ -d "$HOME/.nvm" ]; then
@@ -167,7 +131,7 @@ install_nvm() {
 }
 
 # ============================================
-# 6. Install TPM (tmux plugin manager)
+# TPM (tmux plugin manager)
 # ============================================
 install_tpm() {
     local tpm_dir="$HOME/.tmux/plugins/tpm"
@@ -185,13 +149,12 @@ install_tpm() {
 }
 
 # ============================================
-# 7. Symlink configs
+# Symlink configs
 # ============================================
 backup_and_link() {
     local src="$1"
     local dest="$2"
 
-    # If destination exists and is not already a symlink to our source
     if [ -e "$dest" ] || [ -L "$dest" ]; then
         if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
             success "Already linked: $dest -> $src"
@@ -205,9 +168,7 @@ backup_and_link() {
         mv "$dest" "$BACKUP_DIR/$backup_name"
     fi
 
-    # Create parent directory if needed
     mkdir -p "$(dirname "$dest")"
-
     ln -s "$src" "$dest"
     success "Linked: $dest -> $src"
 }
@@ -222,7 +183,7 @@ symlink_configs() {
 }
 
 # ============================================
-# 8. Change default shell to zsh
+# Default shell
 # ============================================
 set_default_shell() {
     local zsh_path
@@ -235,20 +196,19 @@ set_default_shell() {
 
     info "Changing default shell to zsh..."
 
-    # Ensure zsh is in /etc/shells
     if ! grep -qx "$zsh_path" /etc/shells 2>/dev/null; then
         warn "Adding $zsh_path to /etc/shells"
         echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
     fi
 
     chsh -s "$zsh_path" || {
-        error "Failed to change default shell (you can run 'chsh -s $zsh_path' manually)"; return 1
+        error "Failed to change default shell (run 'chsh -s $zsh_path' manually)"; return 1
     }
     success "Default shell changed to zsh (takes effect on next login)"
 }
 
 # ============================================
-# 9. Install tmux plugins
+# Tmux plugins
 # ============================================
 install_tmux_plugins() {
     local tpm_install="$HOME/.tmux/plugins/tpm/bin/install_plugins"
@@ -266,28 +226,32 @@ install_tmux_plugins() {
 }
 
 # ============================================
-# 10. Print summary
+# Summary
 # ============================================
 print_summary() {
     echo ""
     if [ "$ERRORS" -gt 0 ]; then
         echo -e "${YELLOW}========================================${NC}"
-        echo -e "${YELLOW}  Dotfiles setup finished with $ERRORS error(s)${NC}"
+        echo -e "${YELLOW}  Setup finished with $ERRORS error(s)${NC}"
         echo -e "${YELLOW}========================================${NC}"
     else
         echo -e "${GREEN}========================================${NC}"
-        echo -e "${GREEN}  Dotfiles setup complete!${NC}"
+        echo -e "${GREEN}  Setup complete!${NC}"
         echo -e "${GREEN}========================================${NC}"
     fi
     echo ""
     echo "Symlinks:"
-    ls -la "$HOME/.zshrc" "$HOME/.vimrc" "$HOME/.tmux.conf" "$HOME/.config/nvim" 2>&1 | while read -r line; do
-        echo "  $line"
+    for f in "$HOME/.zshrc" "$HOME/.vimrc" "$HOME/.tmux.conf" "$HOME/.config/nvim"; do
+        if [ -L "$f" ]; then
+            echo "  $f -> $(readlink "$f")"
+        else
+            echo "  $f (not a symlink)"
+        fi
     done
     echo ""
 
     if [ -d "$BACKUP_DIR" ]; then
-        echo "Backups saved to: $BACKUP_DIR"
+        echo "Backups: $BACKUP_DIR"
         echo ""
     fi
 
@@ -307,15 +271,16 @@ main() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    detect_os
-    install_packages  || true
-    install_ohmyzsh   || true
+    install_system_packages || true
+    install_homebrew        || true
+    install_brew_packages   || true
+    install_ohmyzsh         || true
     install_zsh_autosuggestions || true
-    install_nvm       || true
-    install_tpm       || true
+    install_nvm             || true
+    install_tpm             || true
     symlink_configs
-    set_default_shell || true
-    install_tmux_plugins || true
+    set_default_shell       || true
+    install_tmux_plugins    || true
     print_summary
 }
 

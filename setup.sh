@@ -17,135 +17,11 @@ success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; ERRORS=$((ERRORS + 1)); }
 
-# ============================================
-# Homebrew
-# ============================================
-install_homebrew() {
-    if command -v brew &>/dev/null; then
-        success "Homebrew already installed"
-        return
-    fi
-
-    info "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
-        error "Failed to install Homebrew"; return 1
-    }
-
-    # Add Homebrew to PATH for this session (Linux installs to /home/linuxbrew)
-    if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
-        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-    elif [ -x /opt/homebrew/bin/brew ]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    fi
-
-    success "Homebrew installed"
-}
-
-# ============================================
-# System packages (zsh, git, curl, build deps)
-# ============================================
-install_system_packages() {
-    info "Installing system packages..."
-
-    case "$(uname -s)" in
-        Darwin)
-            # macOS — everything via brew, system packages already present
-            ;;
-        Linux)
-            if command -v apt-get &>/dev/null; then
-                sudo apt-get update && sudo apt-get install -y zsh git curl build-essential || {
-                    error "Failed to install system packages"; return 1
-                }
-            elif command -v dnf &>/dev/null; then
-                sudo dnf install -y zsh git curl gcc make || {
-                    error "Failed to install system packages"; return 1
-                }
-            else
-                error "No supported package manager found (apt or dnf)"; return 1
-            fi
-            ;;
-    esac
-
-    success "System packages installed"
-}
-
-# ============================================
-# Brew packages (vim, neovim, tmux, autojump)
-# ============================================
-install_brew_packages() {
-    info "Installing brew packages (vim, neovim, tmux, autojump)..."
-    brew install vim neovim tmux autojump || {
-        error "Failed to install brew packages"; return 1
-    }
-    success "Brew packages installed"
-}
-
-# ============================================
-# oh-my-zsh
-# ============================================
-install_ohmyzsh() {
-    if [ -d "$HOME/.oh-my-zsh" ]; then
-        success "oh-my-zsh already installed"
-        return
-    fi
-
-    info "Installing oh-my-zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || {
-        error "Failed to install oh-my-zsh"; return 1
-    }
-    success "oh-my-zsh installed"
-}
-
-# ============================================
-# zsh-autosuggestions plugin
-# ============================================
-install_zsh_autosuggestions() {
-    local plugin_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
-
-    if [ -d "$plugin_dir" ]; then
-        success "zsh-autosuggestions already installed"
-        return
-    fi
-
-    info "Installing zsh-autosuggestions..."
-    git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir" || {
-        error "Failed to install zsh-autosuggestions"; return 1
-    }
-    success "zsh-autosuggestions installed"
-}
-
-# ============================================
-# nvm
-# ============================================
-install_nvm() {
-    if [ -d "$HOME/.nvm" ]; then
-        success "nvm already installed"
-        return
-    fi
-
-    info "Installing nvm..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash || {
-        error "Failed to install nvm"; return 1
-    }
-    success "nvm installed"
-}
-
-# ============================================
-# TPM (tmux plugin manager)
-# ============================================
-install_tpm() {
-    local tpm_dir="$HOME/.tmux/plugins/tpm"
-
-    if [ -d "$tpm_dir" ]; then
-        success "TPM already installed"
-        return
-    fi
-
-    info "Installing TPM..."
-    git clone https://github.com/tmux-plugins/tpm "$tpm_dir" || {
-        error "Failed to install TPM"; return 1
-    }
-    success "TPM installed"
+usage() {
+    echo "Usage: $(basename "$0") [--install]"
+    echo ""
+    echo "  (default)    Symlink config files only"
+    echo "  --install    Full setup: install packages, tools, and symlink configs"
 }
 
 # ============================================
@@ -183,8 +59,115 @@ symlink_configs() {
 }
 
 # ============================================
-# Default shell
+# Install functions (only run with --install)
 # ============================================
+install_homebrew() {
+    if command -v brew &>/dev/null; then
+        success "Homebrew already installed"
+        return
+    fi
+
+    info "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+        error "Failed to install Homebrew"; return 1
+    }
+
+    if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    elif [ -x /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+
+    success "Homebrew installed"
+}
+
+install_system_packages() {
+    info "Installing system packages..."
+
+    case "$(uname -s)" in
+        Darwin) ;;
+        Linux)
+            if command -v apt-get &>/dev/null; then
+                sudo apt-get update && sudo apt-get install -y zsh git curl build-essential || {
+                    error "Failed to install system packages"; return 1
+                }
+            elif command -v dnf &>/dev/null; then
+                sudo dnf install -y zsh git curl gcc make || {
+                    error "Failed to install system packages"; return 1
+                }
+            else
+                error "No supported package manager found (apt or dnf)"; return 1
+            fi
+            ;;
+    esac
+
+    success "System packages installed"
+}
+
+install_brew_packages() {
+    info "Installing brew packages (vim, neovim, tmux, autojump)..."
+    brew install vim neovim tmux autojump || {
+        error "Failed to install brew packages"; return 1
+    }
+    success "Brew packages installed"
+}
+
+install_ohmyzsh() {
+    if [ -d "$HOME/.oh-my-zsh" ]; then
+        success "oh-my-zsh already installed"
+        return
+    fi
+
+    info "Installing oh-my-zsh..."
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || {
+        error "Failed to install oh-my-zsh"; return 1
+    }
+    success "oh-my-zsh installed"
+}
+
+install_zsh_autosuggestions() {
+    local plugin_dir="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
+
+    if [ -d "$plugin_dir" ]; then
+        success "zsh-autosuggestions already installed"
+        return
+    fi
+
+    info "Installing zsh-autosuggestions..."
+    git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir" || {
+        error "Failed to install zsh-autosuggestions"; return 1
+    }
+    success "zsh-autosuggestions installed"
+}
+
+install_nvm() {
+    if [ -d "$HOME/.nvm" ]; then
+        success "nvm already installed"
+        return
+    fi
+
+    info "Installing nvm..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash || {
+        error "Failed to install nvm"; return 1
+    }
+    success "nvm installed"
+}
+
+install_tpm() {
+    local tpm_dir="$HOME/.tmux/plugins/tpm"
+
+    if [ -d "$tpm_dir" ]; then
+        success "TPM already installed"
+        return
+    fi
+
+    info "Installing TPM..."
+    git clone https://github.com/tmux-plugins/tpm "$tpm_dir" || {
+        error "Failed to install TPM"; return 1
+    }
+    success "TPM installed"
+}
+
 set_default_shell() {
     local zsh_path
     zsh_path="$(which zsh)"
@@ -207,9 +190,6 @@ set_default_shell() {
     success "Default shell changed to zsh (takes effect on next login)"
 }
 
-# ============================================
-# Tmux plugins
-# ============================================
 install_tmux_plugins() {
     local tpm_install="$HOME/.tmux/plugins/tpm/bin/install_plugins"
 
@@ -254,12 +234,6 @@ print_summary() {
         echo "Backups: $BACKUP_DIR"
         echo ""
     fi
-
-    echo "Next steps:"
-    echo "  1. Open a new terminal to load zsh + oh-my-zsh"
-    echo "  2. Run 'tmux' and press prefix + I to finish plugin install"
-    echo "  3. Run 'nvim' to let LazyVim bootstrap plugins"
-    echo ""
 }
 
 # ============================================
@@ -271,16 +245,33 @@ main() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    install_system_packages || true
-    install_homebrew        || true
-    install_brew_packages   || true
-    install_ohmyzsh         || true
-    install_zsh_autosuggestions || true
-    install_nvm             || true
-    install_tpm             || true
+    local do_install=false
+
+    for arg in "$@"; do
+        case "$arg" in
+            --install) do_install=true ;;
+            -h|--help) usage; exit 0 ;;
+            *) error "Unknown option: $arg"; usage; exit 1 ;;
+        esac
+    done
+
+    if [ "$do_install" = true ]; then
+        install_system_packages      || true
+        install_homebrew             || true
+        install_brew_packages        || true
+        install_ohmyzsh              || true
+        install_zsh_autosuggestions  || true
+        install_nvm                  || true
+        install_tpm                  || true
+    fi
+
     symlink_configs
-    set_default_shell       || true
-    install_tmux_plugins    || true
+
+    if [ "$do_install" = true ]; then
+        set_default_shell    || true
+        install_tmux_plugins || true
+    fi
+
     print_summary
 }
 

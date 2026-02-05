@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 DOTFILES_DIR="$HOME/dotfiles"
 BACKUP_DIR="$HOME/.dotfiles-backup"
+ERRORS=0
 
 # Colors for output
 RED='\033[0;31m'
@@ -14,7 +15,7 @@ NC='\033[0m' # No Color
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*"; }
+error()   { echo -e "${RED}[ERROR]${NC} $*"; ERRORS=$((ERRORS + 1)); }
 
 # ============================================
 # 1. Detect OS
@@ -49,15 +50,22 @@ install_packages() {
     if [ "$OS" = "macos" ]; then
         if ! command -v brew &>/dev/null; then
             info "Installing Homebrew..."
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || {
+                error "Failed to install Homebrew"; return 1
+            }
         fi
-        brew install zsh tmux neovim autojump git curl
+        brew install zsh tmux neovim autojump git curl || {
+            error "Failed to install some packages"; return 1
+        }
     else
         if [ "$PKG_MANAGER" = "apt" ]; then
-            sudo apt-get update
-            sudo apt-get install -y zsh tmux neovim autojump git curl
+            sudo apt-get update && sudo apt-get install -y zsh tmux neovim autojump git curl || {
+                error "Failed to install some packages"; return 1
+            }
         elif [ "$PKG_MANAGER" = "dnf" ]; then
-            sudo dnf install -y zsh tmux neovim autojump git curl
+            sudo dnf install -y zsh tmux neovim autojump git curl || {
+                error "Failed to install some packages"; return 1
+            }
         fi
     fi
 
@@ -74,7 +82,9 @@ install_ohmyzsh() {
     fi
 
     info "Installing oh-my-zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || {
+        error "Failed to install oh-my-zsh"; return 1
+    }
     success "oh-my-zsh installed"
 }
 
@@ -90,7 +100,9 @@ install_zsh_autosuggestions() {
     fi
 
     info "Installing zsh-autosuggestions..."
-    git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir"
+    git clone https://github.com/zsh-users/zsh-autosuggestions "$plugin_dir" || {
+        error "Failed to install zsh-autosuggestions"; return 1
+    }
     success "zsh-autosuggestions installed"
 }
 
@@ -104,7 +116,9 @@ install_nvm() {
     fi
 
     info "Installing nvm..."
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash || {
+        error "Failed to install nvm"; return 1
+    }
     success "nvm installed"
 }
 
@@ -120,7 +134,9 @@ install_tpm() {
     fi
 
     info "Installing TPM..."
-    git clone https://github.com/tmux-plugins/tpm "$tpm_dir"
+    git clone https://github.com/tmux-plugins/tpm "$tpm_dir" || {
+        error "Failed to install TPM"; return 1
+    }
     success "TPM installed"
 }
 
@@ -181,7 +197,9 @@ set_default_shell() {
         echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
     fi
 
-    chsh -s "$zsh_path"
+    chsh -s "$zsh_path" || {
+        error "Failed to change default shell (you can run 'chsh -s $zsh_path' manually)"; return 1
+    }
     success "Default shell changed to zsh (takes effect on next login)"
 }
 
@@ -197,7 +215,9 @@ install_tmux_plugins() {
     fi
 
     info "Installing tmux plugins..."
-    TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins" "$tpm_install"
+    TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins" "$tpm_install" || {
+        error "Failed to install tmux plugins"; return 1
+    }
     success "Tmux plugins installed"
 }
 
@@ -206,15 +226,20 @@ install_tmux_plugins() {
 # ============================================
 print_summary() {
     echo ""
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}  Dotfiles setup complete!${NC}"
-    echo -e "${GREEN}========================================${NC}"
+    if [ "$ERRORS" -gt 0 ]; then
+        echo -e "${YELLOW}========================================${NC}"
+        echo -e "${YELLOW}  Dotfiles setup finished with $ERRORS error(s)${NC}"
+        echo -e "${YELLOW}========================================${NC}"
+    else
+        echo -e "${GREEN}========================================${NC}"
+        echo -e "${GREEN}  Dotfiles setup complete!${NC}"
+        echo -e "${GREEN}========================================${NC}"
+    fi
     echo ""
     echo "Symlinks:"
-    echo "  ~/.zshrc     -> ~/dotfiles/.zshrc"
-    echo "  ~/.vimrc     -> ~/dotfiles/.vimrc"
-    echo "  ~/.tmux.conf -> ~/dotfiles/.tmux.conf"
-    echo "  ~/.config/nvim -> ~/dotfiles/nvim"
+    ls -la "$HOME/.zshrc" "$HOME/.vimrc" "$HOME/.tmux.conf" "$HOME/.config/nvim" 2>&1 | while read -r line; do
+        echo "  $line"
+    done
     echo ""
 
     if [ -d "$BACKUP_DIR" ]; then
@@ -239,14 +264,14 @@ main() {
     echo ""
 
     detect_os
-    install_packages
-    install_ohmyzsh
-    install_zsh_autosuggestions
-    install_nvm
-    install_tpm
+    install_packages  || true
+    install_ohmyzsh   || true
+    install_zsh_autosuggestions || true
+    install_nvm       || true
+    install_tpm       || true
     symlink_configs
-    set_default_shell
-    install_tmux_plugins
+    set_default_shell || true
+    install_tmux_plugins || true
     print_summary
 }
 

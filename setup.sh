@@ -42,6 +42,49 @@ detect_os() {
 }
 
 # ============================================
+# Helper: Install neovim from GitHub releases (Linux)
+# ============================================
+install_neovim_linux() {
+    local current_ver=""
+    if command -v nvim &>/dev/null; then
+        current_ver="$(nvim --version | head -1 | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')"
+    fi
+
+    local required_ver="0.11.2"
+
+    # Check if current version is sufficient
+    if [ -n "$current_ver" ]; then
+        if printf '%s\n%s\n' "$required_ver" "$current_ver" | sort -V | head -1 | grep -qx "$required_ver"; then
+            success "Neovim $current_ver already meets minimum ($required_ver)"
+            return
+        fi
+        info "Neovim $current_ver is too old (need >= $required_ver), upgrading..."
+    else
+        info "Installing Neovim from GitHub releases..."
+    fi
+
+    local arch
+    arch="$(uname -m)"
+    local nvim_tar="nvim-linux-${arch}.tar.gz"
+    local nvim_url="https://github.com/neovim/neovim/releases/latest/download/${nvim_tar}"
+
+    curl -fsSL "$nvim_url" -o "/tmp/${nvim_tar}" || {
+        error "Failed to download Neovim"; return 1
+    }
+
+    sudo rm -rf /opt/nvim
+    sudo tar -C /opt -xzf "/tmp/${nvim_tar}" || {
+        error "Failed to extract Neovim"; return 1
+    }
+    rm -f "/tmp/${nvim_tar}"
+
+    # Symlink to /usr/local/bin so it's on PATH
+    sudo ln -sf /opt/nvim-linux-${arch}/bin/nvim /usr/local/bin/nvim
+
+    success "Neovim $(nvim --version | head -1) installed to /opt"
+}
+
+# ============================================
 # 2. Install packages
 # ============================================
 install_packages() {
@@ -59,14 +102,15 @@ install_packages() {
         }
     else
         if [ "$PKG_MANAGER" = "apt" ]; then
-            sudo apt-get update && sudo apt-get install -y zsh tmux neovim autojump git curl || {
+            sudo apt-get update && sudo apt-get install -y zsh tmux autojump git curl || {
                 error "Failed to install some packages"; return 1
             }
         elif [ "$PKG_MANAGER" = "dnf" ]; then
-            sudo dnf install -y zsh tmux neovim autojump git curl || {
+            sudo dnf install -y zsh tmux autojump git curl || {
                 error "Failed to install some packages"; return 1
             }
         fi
+        install_neovim_linux
     fi
 
     success "Packages installed"

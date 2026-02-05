@@ -197,7 +197,7 @@ install_tmux_plugins() {
     fi
 
     info "Installing tmux plugins..."
-    "$tpm_install"
+    TMUX_PLUGIN_MANAGER_PATH="$HOME/.tmux/plugins" "$tpm_install"
     success "Tmux plugins installed"
 }
 
